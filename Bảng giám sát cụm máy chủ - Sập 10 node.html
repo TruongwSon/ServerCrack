@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trung tâm giám sát hạ tầng cụm máy chủ</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+:root{--bg:#030712;--panel:#0b1220;--line:#1e293b;--ok:#22c55e;--red:#b91c1c;--teal:#2dd4bf;--txt:#e2e8f0;--mut:#64748b;
+ padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+html,body{background:var(--bg);color:var(--txt);font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0}
+.mono{font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px;transition:background .2s,border-color .2s}
+.card.ok{border-color:#14532d}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);display:inline-block}
+.card .st-bad,.card .bad{display:none}
+.card.down{background:var(--red);border-color:#fecaca;animation:pulse .7s infinite alternate}
+.card.down .st-ok,.card.down .ok-only{display:none}
+.card.down .st-bad,.card.down .bad{display:block}
+.card.down .dot{background:#fff;box-shadow:0 0 8px #fff}
+.card.flick{animation:flick .12s 5}
+.card.down .icon{text-decoration:none;position:relative}
+.card.down .icon::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:2px;background:#fff;transform:rotate(-35deg)}
+@keyframes pulse{from{box-shadow:0 0 0 0 rgba(239,68,68,.2),inset 0 0 6px rgba(0,0,0,.3)}to{box-shadow:0 0 22px 4px rgba(239,68,68,.9),inset 0 0 14px rgba(0,0,0,.2)}}
+@keyframes flick{0%,100%{background:var(--panel)}50%{background:#7f1d1d}}
+body.alarm{animation:wash 1s infinite alternate}
+@keyframes wash{from{background:#030712}to{background:#2a0508}}
+body.shake #app{animation:shake .08s infinite}
+@keyframes shake{0%{transform:translate(2px,1px)}25%{transform:translate(-3px,-2px)}50%{transform:translate(-1px,3px)}75%{transform:translate(3px,-1px)}100%{transform:translate(-2px,2px)}}
+.banner{display:none;animation:blink .6s steps(2) infinite}
+body.alarm .banner{display:inline-block}
+body.alarm .calm{display:none}
+@keyframes blink{50%{opacity:.25}}
+#log{height:150px;overflow:auto;background:#010409;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:12px;line-height:1.5}
+.l-info{color:#94a3b8}.l-warn{color:#fbbf24}.l-bad{color:#f87171}
+.hint{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));font-size:11px;color:var(--mut)}
+@media (prefers-reduced-motion:reduce){.card.down,body.alarm,body.shake #app{animation:none}}
+</style>
+</head>
+<body>
+<div id="app" class="max-w-6xl mx-auto p-3 sm:p-5">
+  <header class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div>
+      <h1 class="text-sm sm:text-base font-semibold tracking-wide">TRUNG TÂM GIÁM SÁT HẠ TẦNG CỤM MÁY CHỦ TRƯỜNG ĐẠI HỌC</h1>
+      <div class="text-xs mono text-slate-500">DATA CENTER MONITORING</div>
+    </div>
+    <div class="text-right">
+      <div id="status" class="mono text-xs"><span class="calm" style="color:var(--ok)">● 10/10 NODES ONLINE - HEALTHY</span><span class="banner px-2 py-1 font-bold text-white" style="background:var(--red)">[CRITICAL DISASTER] 10/10 NODES OFFLINE - SYSTEM BLACKOUT</span></div>
+      <div id="clock" class="mono text-lg mt-1">00:00:00 - OCT 2026</div>
+    </div>
+  </header>
+
+  <section id="grid" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3"></section>
+
+  <section class="card mb-3">
+    <div class="flex justify-between text-xs mb-1"><span>Băng thông tổng toàn cụm</span><span id="bw" class="mono" style="color:var(--teal)">10.00 Gbps</span></div>
+    <svg id="chart" viewBox="0 0 600 90" preserveAspectRatio="none" class="w-full" style="height:90px;max-width:100%">
+      <line x1="0" y1="85" x2="600" y2="85" stroke="#1e293b"/>
+      <polyline id="line" fill="none" stroke="#2dd4bf" stroke-width="2"/>
+    </svg>
+  </section>
+
+  <section>
+    <div class="text-xs text-slate-500 mb-1">Nhật ký sự kiện (Console Event Log)</div>
+    <div id="log" class="mono"></div>
+  </section>
+</div>
+<div class="hint mono">Nhấn Enter hoặc chạm nút để kích hoạt · R để khôi phục</div>
+<button id="go" class="fixed left-3 mono text-xs px-3 py-2 rounded" style="bottom:calc(10px + env(safe-area-inset-bottom,0px));background:#1e293b;color:#cbd5e1">Kích hoạt (Enter)</button>
+
+<script>
+const NODES=[["SRV-01","Core Gateway"],["SRV-02","NCKH Portal"],["SRV-03","DB Master"],["SRV-04","DB Replica"],["SRV-05","Identity SSO"],["SRV-06","AI Neural 01"],["SRV-07","AI Neural 02"],["SRV-08","Payment Gateway"],["SRV-09","Storage Cloud"],["SRV-10","Backup Mirror"]];
+const grid=document.getElementById("grid"),logEl=document.getElementById("log");
+NODES.forEach(([id,name],i)=>{
+  const d=document.createElement("div");d.className="card ok";d.id="n"+i;
+  d.innerHTML=`<div class="flex items-center justify-between mb-1"><span class="mono text-sm font-bold">${id}</span><span class="dot"></span></div>
+  <div class="text-xs text-slate-400 mb-2"><span class="icon">▤</span> ${name}</div>
+  <div class="st-ok mono text-[11px]" style="color:var(--ok)">[ONLINE - HEALTHY]</div>
+  <div class="st-bad mono text-[11px] font-bold text-white">[CRITICAL OFFLINE - CONNECTION DROPPED]</div>
+  <div class="mono text-[11px] mt-2 leading-4 text-slate-300">
+    <div class="ok-only">CPU Usage: ${20+Math.floor(Math.random()*35)}%<br>Memory: ${40+Math.floor(Math.random()*30)}%<br>Ping RTT: ${1+Math.floor(Math.random()*4)} ms (Loss: 0%)</div>
+    <div class="bad">CPU Usage: 0% [N/A]<br>Memory: Error Reading Buffer<br>Ping RTT: Request Timed Out (Loss: 100%)</div>
+  </div>`;
+  grid.appendChild(d);
+});
+
+// clock
+const clock=document.getElementById("clock");let t0=0*3600+0*60+0;let clockSec=0,clockOn=true;
+function fmt(s){const h=String(Math.floor(s/3600)%24).padStart(2,"0"),m=String(Math.floor(s/60)%60).padStart(2,"0"),x=String(s%60).padStart(2,"0");return h+":"+m+":"+x+" - OCT 2026"}
+let base=0;setInterval(()=>{base++;clock.textContent=fmt(base)},1000);clock.textContent=fmt(0);
+
+// chart
+const pts=Array.from({length:60},()=>10);let down=false;
+function draw(){const w=600/(pts.length-1);document.getElementById("line").setAttribute("points",pts.map((v,i)=>`${(i*w).toFixed(1)},${(85-v*7.5).toFixed(1)}`).join(" "))}
+setInterval(()=>{pts.shift();pts.push(down?0:9.4+Math.random()*0.8);draw();
+  document.getElementById("bw").textContent=down?"0.00 Mbps (Zero Traffic)":(pts[pts.length-1]).toFixed(2)+" Gbps";
+  document.getElementById("bw").style.color=down?"#f87171":"var(--teal)"},500);draw();
+
+// log
+function log(msg,cls="l-info"){const p=document.createElement("div");p.className=cls;p.textContent=msg;logEl.appendChild(p);logEl.scrollTop=logEl.scrollHeight}
+log("00:00:00 [SRV-MGR] Cluster heartbeat OK - 10/10 nodes healthy.");
+log("00:00:00 [SRV-MGR] Patch bundle ready. Awaiting operator command...","l-warn");
+
+// siren
+let ac,siren;
+function startSiren(){try{ac=new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type="sawtooth";g.gain.value=.12;o.connect(g).connect(ac.destination);o.start();
+  let hi=false;siren=setInterval(()=>{o.frequency.setValueAtTime(hi?900:520,ac.currentTime);hi=!hi},450);o.frequency.value=520;siren.o=o}catch(e){}}
+function stopSiren(){clearInterval(siren);try{siren.o&&siren.o.stop();ac&&ac.close()}catch(e){}}
+
+const T=s=>{const x=Math.floor(s);return "00:"+String(Math.floor(x/60)+5).padStart(2,"0")+":"+String(x%60).padStart(2,"0")};
+let busy=false;
+function crash(){
+  if(busy||down)return;busy=true;
+  document.body.classList.add("shake");
+  logEl.innerHTML="";
+  log("00:05:00 [ROOT@SRV-MGR] Executing batch task: 'systemctl restart && reboot --all -f'","l-warn");
+  log("00:05:01 [BROADCAST] Hardware reboot signal sent to 10 nodes simultaneously.","l-warn");
+  startSiren();
+  const cards=[...grid.children];
+  cards.forEach((c,i)=>setTimeout(()=>{
+    c.classList.add("flick");
+    setTimeout(()=>{c.classList.remove("flick");c.classList.add("down");
+      if(i===0)log("00:05:03 [FATAL] Node SRV-01: Kernel panic - not syncing: VFS: Unable to mount root fs.","l-bad");
+      if(i===1)log("00:05:04 [ALERT] Node SRV-02 to SRV-10: Connection dropped. Heartbeat lost.","l-bad");
+      else if(i>1)log(`00:05:04 [ALERT] ${NODES[i][0]} (${NODES[i][1]}): heartbeat lost, packet loss 100%`,"l-bad");
+      if(i===9){down=true;document.body.classList.add("alarm");
+        log("00:05:05 [CRITICAL] Internal management switch isolated. Entire network subnet is down!","l-bad");
+        log("00:05:05 [CRITICAL] VLAN 10/20/30 unreachable. System blackout.","l-bad");
+        setTimeout(()=>{document.body.classList.remove("shake");busy=false;base=312},800);
+      }
+    },600);
+  },i*270));
+}
+function restore(){down=false;busy=false;document.body.classList.remove("alarm","shake");stopSiren();
+  [...grid.children].forEach(c=>c.classList.remove("down","flick"));
+  logEl.innerHTML="";log("00:00:00 [SRV-MGR] Cluster restored - 10/10 nodes healthy.");base=0}
+document.addEventListener("keydown",e=>{if(e.key==="Enter")crash();if(e.key==="r"||e.key==="R")restore()});
+document.getElementById("go").addEventListener("click",crash);
+</script>
+</body>
+</html>
